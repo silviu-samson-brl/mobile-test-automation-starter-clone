@@ -18,12 +18,23 @@
 #     --boot-disk-size=80GB \
 #     --boot-disk-type=pd-ssd
 #
-# STEP 2 — SSH in and run this script:
+# STEP 2 — Copy this script and proxy-setup-kit to the VM:
+#
+#   gcloud compute scp setup-emulator-host-gcp.sh android-emulators-poc:~ --zone=us-central1-a --project=appium-sandbox-poc
+#   gcloud compute scp --recurse proxy-setup-kit android-emulators-poc:~ --zone=us-central1-a --project=appium-sandbox-poc
+#
+# STEP 3 — SSH in and run this script:
 #
 #   gcloud compute ssh android-emulators-poc --zone=us-central1-a --project=appium-sandbox-poc
 #   bash setup-emulator-host-gcp.sh
 #
-# STEP 3 — Create a firewall rule for VNC (from local machine, once):
+# STEP 4 — Create emulators using proxy-setup-kit (after reboot):
+#
+#   cd ~/proxy-setup-kit
+#   ./full_setup_android_emulator.sh emulator1
+#   ./full_setup_android_emulator.sh emulator2
+#
+# STEP 5 — Create a firewall rule for VNC (from local machine, once):
 #
 #   gcloud compute firewall-rules create allow-vnc \
 #     --project=appium-sandbox-poc \
@@ -37,15 +48,13 @@ ANDROID_API="36"
 ANDROID_SYSTEM_IMAGE="system-images;android-${ANDROID_API};google_apis;x86_64"
 ANDROID_HOME="$HOME/android-sdk"
 VNC_PASSWORD="${1:-brillio1703}"
-EMULATOR_RAM="4096"
-EMULATOR_CORES="4"
 
 info() { echo -e "\n\033[0;36m>>> $*\033[0m"; }
 ok()   { echo -e "\033[0;32m  OK  $*\033[0m"; }
 fail() { echo -e "\033[0;31m  FAIL  $*\033[0m"; exit 1; }
 
 # =============================================================================
-info "Step 1/8 — System packages"
+info "Step 1/7 — System packages"
 # =============================================================================
 sudo apt-get update -qq
 sudo apt-get install -y curl wget unzip git openjdk-17-jdk qemu-kvm libvirt-daemon-system xvfb x11vnc openbox
@@ -60,7 +69,7 @@ else
 fi
 
 # =============================================================================
-info "Step 2/8 — Node.js 20"
+info "Step 2/7 — Node.js 20"
 # =============================================================================
 if command -v node &>/dev/null; then
   ok "Node.js already installed: $(node --version)"
@@ -71,7 +80,7 @@ else
 fi
 
 # =============================================================================
-info "Step 3/8 — Android SDK + Emulator"
+info "Step 3/7 — Android SDK + Emulator"
 # =============================================================================
 mkdir -p "$ANDROID_HOME/cmdline-tools"
 
@@ -92,7 +101,7 @@ sdkmanager --sdk_root="$ANDROID_HOME" "platform-tools" "emulator" "platforms;and
 ok "Android SDK installed at $ANDROID_HOME"
 
 # =============================================================================
-info "Step 4/8 — Persist environment variables"
+info "Step 4/7 — Persist environment variables"
 # =============================================================================
 # Remove any previous Android SDK entries to avoid duplicates
 sed -i '/# Android SDK/d; /ANDROID_HOME/d; /ANDROID_SDK_ROOT/d; /APPIUM_HOME/d; /cmdline-tools/d' "$HOME/.bashrc" 2>/dev/null || true
@@ -109,7 +118,7 @@ ENVBLOCK
 ok "Environment variables written to ~/.bashrc"
 
 # =============================================================================
-info "Step 5/8 — Appium + UIAutomator2 driver"
+info "Step 5/7 — Appium + UIAutomator2 driver"
 # =============================================================================
 sudo npm install -g appium --silent
 export APPIUM_HOME="$HOME/.appium"
@@ -118,27 +127,7 @@ sudo npm install -g appium-doctor --silent 2>/dev/null || true
 ok "Appium $(appium --version) with uiautomator2 driver"
 
 # =============================================================================
-info "Step 6/8 — Create AVDs (emulator1 + emulator2)"
-# =============================================================================
-for AVD_NAME in emulator1 emulator2; do
-  echo "no" | avdmanager create avd \
-    --name "$AVD_NAME" \
-    --package "${ANDROID_SYSTEM_IMAGE}" \
-    --device "pixel_6" \
-    --force > /dev/null
-
-  # Increase RAM and CPU cores
-  AVD_CONFIG="$HOME/.android/avd/${AVD_NAME}.avd/config.ini"
-  if [ -f "$AVD_CONFIG" ]; then
-    sed -i "s/^hw.ramSize.*/hw.ramSize = ${EMULATOR_RAM}/" "$AVD_CONFIG"
-    sed -i "s/^hw.cpu.ncore.*/hw.cpu.ncore = ${EMULATOR_CORES}/" "$AVD_CONFIG"
-  fi
-
-  ok "AVD '$AVD_NAME' created (${EMULATOR_RAM}MB RAM, ${EMULATOR_CORES} cores)"
-done
-
-# =============================================================================
-info "Step 7/8 — Create start-emulators.sh"
+info "Step 6/7 — Create start-emulators.sh"
 # =============================================================================
 cat > "$HOME/start-emulators.sh" << SCRIPT
 #!/bin/bash
@@ -169,7 +158,7 @@ chmod +x "$HOME/start-emulators.sh"
 ok "~/start-emulators.sh created"
 
 # =============================================================================
-info "Step 8/8 — Register systemd service (auto-start on boot)"
+info "Step 7/7 — Register systemd service (auto-start on boot)"
 # =============================================================================
 sudo tee /etc/systemd/system/emulators.service > /dev/null << SVCEOF
 [Unit]
@@ -203,14 +192,17 @@ echo -e "\033[0;32m  Setup complete!\033[0m"
 echo -e "\033[0;32m========================================\033[0m"
 echo ""
 echo "  Installed: Java 17, Node.js, Android SDK (API ${ANDROID_API}), Appium, KVM, VNC tools"
-echo "  AVDs:      emulator1, emulator2 (${EMULATOR_RAM}MB RAM each)"
 echo "  Service:   emulators.service (auto-starts on boot)"
 echo ""
 echo "  Next steps:"
 echo "    1. Log out and back in (so kvm group takes effect), or run: newgrp kvm"
-echo "    2. Reboot the VM: sudo reboot"
-echo "    3. Emulators + VNC will start automatically on boot"
-echo "    4. Connect via VNC: vnc://<VM_EXTERNAL_IP>:5900"
+echo "    2. Create emulators using proxy-setup-kit:"
+echo "       cd ~/proxy-setup-kit"
+echo "       ./full_setup_android_emulator.sh emulator1"
+echo "       ./full_setup_android_emulator.sh emulator2"
+echo "    3. Reboot the VM: sudo reboot"
+echo "    4. Emulators + VNC will start automatically on boot"
+echo "    5. Connect via VNC: vnc://<VM_EXTERNAL_IP>:5900"
 echo ""
 echo "  Manual control:"
 echo "    sudo systemctl status emulators    # check status"

@@ -38,6 +38,108 @@ Xvfb (virtual display :1)
 
 ---
 
+## Initial Setup (one-time)
+
+### 1. Create the VM (from local machine)
+
+```bash
+gcloud compute instances create android-emulators-poc --project=appium-sandbox-poc --zone=us-central1-a --machine-type=n2-standard-8 --enable-nested-virtualization --image-family=ubuntu-2204-lts --image-project=ubuntu-os-cloud --boot-disk-size=80GB --boot-disk-type=pd-ssd
+```
+
+### 2. Copy setup files to the VM (from local machine)
+
+```bash
+gcloud compute scp setup-emulator-host-gcp.sh android-emulators-poc:~ --zone=us-central1-a --project=appium-sandbox-poc
+```
+
+```bash
+gcloud compute scp --recurse proxy-setup-kit android-emulators-poc:~ --zone=us-central1-a --project=appium-sandbox-poc
+```
+
+### 3. SSH in and run the setup script
+
+```bash
+gcloud compute ssh android-emulators-poc --zone=us-central1-a --project=appium-sandbox-poc
+```
+
+```bash
+bash ~/setup-emulator-host-gcp.sh
+```
+
+This installs all infrastructure: system packages, Java 17, Node.js 20, Android SDK, Appium, KVM, VNC tools (Xvfb, x11vnc, openbox), and registers the systemd auto-start service.
+
+### 4. Apply KVM group and create emulators
+
+```bash
+newgrp kvm
+```
+
+```bash
+cd ~/proxy-setup-kit && ./full_setup_android_emulator.sh emulator1
+```
+
+```bash
+cd ~/proxy-setup-kit && ./full_setup_android_emulator.sh emulator2
+```
+
+Each `full_setup_android_emulator.sh` run:
+1. Creates the AVD (with hardware keyboard, dpad, trackball enabled)
+2. Installs the system image if not present
+3. Starts the emulator with `-writable-system -no-snapshot -selinux permissive`
+4. Installs the mitmproxy CA certificate on the emulator
+5. Sets the HTTP proxy (configured in `proxy-setup-kit/proxy.env`)
+6. Reboots the emulator to apply changes
+
+### 5. Create firewall rule for VNC (from local machine, one-time)
+
+```bash
+gcloud compute firewall-rules create allow-vnc --project=appium-sandbox-poc --allow=tcp:5900 --source-ranges=$(curl -s ifconfig.me)/32
+```
+
+### 6. Reboot and connect
+
+```bash
+sudo reboot
+```
+
+After reboot, the systemd service auto-starts Xvfb + openbox + x11vnc + both emulators. Connect via VNC (see "Startup Steps" below).
+
+---
+
+## Proxy Setup Kit (`~/proxy-setup-kit/`)
+
+A self-contained kit for creating emulators and configuring the mitmproxy certificate + HTTP proxy. Copied to the VM during initial setup.
+
+| File | Purpose |
+|---|---|
+| `proxy.env` | Proxy address config (`PROXY_HOST`, `PROXY_PORT`) — edit if address changes |
+| `mitmproxy-ca-cert.pem` | CA certificate for proxy traffic interception |
+| `full_setup_android_emulator.sh` | Creates emulator + installs cert + sets proxy (runs the two scripts below in sequence) |
+| `create_android_emulator.sh` | Creates AVD only (system image: `android-36;google_apis;x86_64`, device: `medium_phone`) |
+| `proxy_setup_android_emulator.sh` | Installs cert + sets proxy on an existing emulator (starts it if not running) |
+
+**Create a new emulator with full proxy setup:**
+
+```bash
+cd ~/proxy-setup-kit && ./full_setup_android_emulator.sh <AVD_NAME>
+```
+
+**Re-apply proxy/cert on an existing emulator (e.g. after proxy address change):**
+
+```bash
+cd ~/proxy-setup-kit && ./proxy_setup_android_emulator.sh <AVD_NAME>
+```
+
+**Disable proxy temporarily:**
+
+```bash
+adb -s emulator-5554 shell settings put global http_proxy :0
+```
+
+> Current proxy address: `54.80.17.8:7777` (edit `proxy.env` to change)
+
+---
+
 ## Auto-start (systemd service)
 
 A systemd service (`emulators.service`) is registered during setup. It runs `~/start-emulators.sh` automatically on every VM boot — no need to SSH in and start things manually.
@@ -171,10 +273,12 @@ adb -s emulator-5554 install ~/file.apk
 
 AVD configs are at `~/.android/avd/<name>.avd/config.ini`.
 
-Default resources were low. To increase (edit config while emulator is stopped):
+The `create_android_emulator.sh` script auto-configures: `hw.keyboard`, `hw.keyboard.lid`, `hw.dpad`, `hw.trackBall`.
+
+To tune resources (edit config while emulator is stopped):
 
 ```
-hw.ramSize = 4096M
+hw.ramSize = 4096
 hw.cpu.ncore = 4
 ```
 
@@ -200,6 +304,6 @@ hw.cpu.ncore = 4
 | `Xvfb :1` already active | Display :1 still running from before — `rm /tmp/.X1-lock` or reuse existing |
 | Firewall rule already exists | Use `update` instead of `create` |
 | VNC not working after VM restart | Solved: `emulators.service` systemd unit auto-starts everything on boot |
-| Google login fails on emulator | Likely network/proxy related, not system image. `google_apis;x86_64` is correct for x86 VMs |
+| Google login fails on emulator | Likely network/proxy related, not system image. Using `google_apis;x86_64` with mitmproxy cert installed via proxy-setup-kit |
 | Apps crashing / slow | Increase `hw.ramSize` in AVD config |
 | GPU (NVIDIA T4) considered | Doesn't help Android emulator rendering — abandoned |
