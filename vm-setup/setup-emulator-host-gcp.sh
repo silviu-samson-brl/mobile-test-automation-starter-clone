@@ -54,7 +54,7 @@ ok()   { echo -e "\033[0;32m  OK  $*\033[0m"; }
 fail() { echo -e "\033[0;31m  FAIL  $*\033[0m"; exit 1; }
 
 # =============================================================================
-info "Step 1/7 — System packages"
+info "Step 1/8 — System packages"
 # =============================================================================
 sudo apt-get update -qq
 sudo apt-get install -y curl wget unzip git openjdk-17-jdk qemu-kvm libvirt-daemon-system xvfb x11vnc openbox
@@ -69,7 +69,7 @@ else
 fi
 
 # =============================================================================
-info "Step 2/7 — Node.js 20"
+info "Step 2/8 — Node.js 20"
 # =============================================================================
 if command -v node &>/dev/null; then
   ok "Node.js already installed: $(node --version)"
@@ -80,7 +80,7 @@ else
 fi
 
 # =============================================================================
-info "Step 3/7 — Android SDK + Emulator"
+info "Step 3/8 — Android SDK + Emulator"
 # =============================================================================
 mkdir -p "$ANDROID_HOME/cmdline-tools"
 
@@ -101,7 +101,7 @@ sdkmanager --sdk_root="$ANDROID_HOME" "platform-tools" "emulator" "platforms;and
 ok "Android SDK installed at $ANDROID_HOME"
 
 # =============================================================================
-info "Step 4/7 — Persist environment variables"
+info "Step 4/8 — Persist environment variables"
 # =============================================================================
 # Remove any previous Android SDK entries to avoid duplicates
 sed -i '/# Android SDK/d; /ANDROID_HOME/d; /ANDROID_SDK_ROOT/d; /APPIUM_HOME/d; /cmdline-tools/d' "$HOME/.bashrc" 2>/dev/null || true
@@ -118,7 +118,7 @@ ENVBLOCK
 ok "Environment variables written to ~/.bashrc"
 
 # =============================================================================
-info "Step 5/7 — Appium + UIAutomator2 driver"
+info "Step 5/8 — Appium + UIAutomator2 driver"
 # =============================================================================
 sudo npm install -g appium --silent
 export APPIUM_HOME="$HOME/.appium"
@@ -127,7 +127,20 @@ sudo npm install -g appium-doctor --silent 2>/dev/null || true
 ok "Appium $(appium --version) with uiautomator2 driver"
 
 # =============================================================================
-info "Step 6/7 — Create start-emulators.sh"
+info "Step 6/8 — Cloudflared"
+# =============================================================================
+if command -v cloudflared &>/dev/null; then
+  ok "cloudflared already installed: $(cloudflared --version)"
+else
+  curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg > /dev/null
+  echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflared.list > /dev/null
+  sudo apt-get update -qq
+  sudo apt-get install -y cloudflared -q
+  ok "cloudflared $(cloudflared --version)"
+fi
+
+# =============================================================================
+info "Step 7/8 — Create start-emulators.sh"
 # =============================================================================
 cat > "$HOME/start-emulators.sh" << SCRIPT
 #!/bin/bash
@@ -152,13 +165,27 @@ echo "emulator1 ready"
 emulator -avd emulator2 -no-audio -no-boot-anim -no-snapshot-save -accel on -gpu swiftshader_indirect &
 echo "Starting emulator2..."
 
+# Start Appium server
+appium --base-path / --port 4723 --allow-insecure='*:session_discovery,*:adb_shell' --allow-cors &
+echo "Appium server started on port 4723"
+
+# Start cloudflared tunnel to expose Appium server
+TUNNEL_LOG="/tmp/cloudflared.log"
+cloudflared tunnel --url http://localhost:4723 > "\$TUNNEL_LOG" 2>&1 &
+sleep 10
+TUNNEL_URL=\$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "\$TUNNEL_LOG" | head -1)
+echo ""
+echo "════════════════════════════════════════════════════════════"
+echo "  Cloudflared tunnel: \${TUNNEL_URL:-check \$TUNNEL_LOG}"
+echo "════════════════════════════════════════════════════════════"
+
 echo "Ready — connect via vnc://\$(curl -s ifconfig.me):5900"
 SCRIPT
 chmod +x "$HOME/start-emulators.sh"
 ok "~/start-emulators.sh created"
 
 # =============================================================================
-info "Step 7/7 — Register systemd service (auto-start on boot)"
+info "Step 8/8 — Register systemd service (auto-start on boot)"
 # =============================================================================
 sudo tee /etc/systemd/system/emulators.service > /dev/null << SVCEOF
 [Unit]
@@ -174,7 +201,7 @@ Environment=ANDROID_SDK_ROOT=$HOME/android-sdk
 Environment=APPIUM_HOME=$HOME/.appium
 Environment=PATH=$HOME/android-sdk/emulator:$HOME/android-sdk/platform-tools:$HOME/android-sdk/cmdline-tools/latest/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=$HOME/start-emulators.sh
-ExecStop=/bin/bash -c 'pkill -f emulator; pkill x11vnc; pkill openbox; pkill Xvfb'
+ExecStop=/bin/bash -c 'pkill cloudflared; pkill -f appium; pkill -f emulator; pkill x11vnc; pkill openbox; pkill Xvfb'
 RemainAfterExit=yes
 
 [Install]

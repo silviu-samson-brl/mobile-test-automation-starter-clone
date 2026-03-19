@@ -18,7 +18,8 @@
 | System packages | curl, wget, unzip, git, openjdk-17-jdk, qemu-kvm, libvirt-daemon-system, xvfb, x11vnc |
 | Node.js | v20 (via nodesource) |
 | Android SDK | API 36, `google_apis;x86_64` system image, at `~/android-sdk` |
-| Appium , appium-doctor | Global npm install + uiautomator2 driver |
+| Appium, appium-doctor | Global npm install + uiautomator2 driver |
+| cloudflared | Cloudflare tunnel — exposes local Appium server to the cloud |
 | openbox | Lightweight window manager (drag/resize emulator windows on VNC) |
 | KVM | User added to `kvm` group |
 
@@ -66,7 +67,7 @@ gcloud compute ssh android-emulators-poc --zone=us-central1-a --project=appium-s
 bash ~/setup-emulator-host-gcp.sh
 ```
 
-This installs all infrastructure: system packages, Java 17, Node.js 20, Android SDK, Appium, KVM, VNC tools (Xvfb, x11vnc, openbox), and registers the systemd auto-start service.
+This installs all infrastructure: system packages, Java 17, Node.js 20, Android SDK, Appium, cloudflared, KVM, VNC tools (Xvfb, x11vnc, openbox), and registers the systemd auto-start service.
 
 ### 4. Apply KVM group and create emulators
 
@@ -102,7 +103,7 @@ gcloud compute firewall-rules create allow-vnc --project=appium-sandbox-poc --al
 sudo reboot
 ```
 
-After reboot, the systemd service auto-starts Xvfb + openbox + x11vnc + both emulators. Connect via VNC (see "Startup Steps" below).
+After reboot, the systemd service auto-starts Xvfb + openbox + x11vnc + both emulators + Appium server + cloudflared tunnel. Connect via VNC (see "Startup Steps" below).
 
 ---
 
@@ -144,7 +145,10 @@ adb -s emulator-5554 shell settings put global http_proxy :0
 
 A systemd service (`emulators.service`) is registered during setup. It runs `~/start-emulators.sh` automatically on every VM boot — no need to SSH in and start things manually.
 
-The service starts: Xvfb (display :1), openbox (window manager), x11vnc (VNC on port 5900), emulator1, waits for full boot, then emulator2.
+The service starts: Xvfb (display :1), openbox (window manager), x11vnc (VNC on port 5900), emulator1, waits for full boot, then emulator2, Appium server (port 4723), and a cloudflared tunnel exposing Appium to the internet.
+
+> The cloudflared tunnel URL changes on every restart. Check it with:
+> `grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' /tmp/cloudflared.log`
 
 **Service control (via SSH):**
 
@@ -179,7 +183,7 @@ Environment=ANDROID_SDK_ROOT=/home/<your-user>/android-sdk
 Environment=APPIUM_HOME=/home/<your-user>/.appium
 Environment=PATH=/home/<your-user>/android-sdk/emulator:/home/<your-user>/android-sdk/platform-tools:/home/<your-user>/android-sdk/cmdline-tools/latest/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/home/<your-user>/start-emulators.sh
-ExecStop=/bin/bash -c 'pkill -f emulator; pkill x11vnc; pkill openbox; pkill Xvfb'
+ExecStop=/bin/bash -c 'pkill cloudflared; pkill -f appium; pkill -f emulator; pkill x11vnc; pkill openbox; pkill Xvfb'
 RemainAfterExit=yes
 
 [Install]
@@ -213,6 +217,20 @@ echo "emulator1 ready"
 # Now start emulator2
 emulator -avd emulator2 -no-audio -no-boot-anim -no-snapshot-save -accel on -gpu swiftshader_indirect &
 echo "Starting emulator2..."
+
+# Start Appium server
+appium --base-path / --port 4723 --allow-insecure='*:session_discovery,*:adb_shell' --allow-cors &
+echo "Appium server started on port 4723"
+
+# Start cloudflared tunnel to expose Appium server
+TUNNEL_LOG="/tmp/cloudflared.log"
+cloudflared tunnel --url http://localhost:4723 > "$TUNNEL_LOG" 2>&1 &
+sleep 10
+TUNNEL_URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$TUNNEL_LOG" | head -1)
+echo ""
+echo "════════════════════════════════════════════════════════════"
+echo "  Cloudflared tunnel: ${TUNNEL_URL:-check $TUNNEL_LOG}"
+echo "════════════════════════════════════════════════════════════"
 
 echo "Ready — connect via vnc://$(curl -s ifconfig.me):5900"
 ```
