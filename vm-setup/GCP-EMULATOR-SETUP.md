@@ -25,7 +25,7 @@
 
 ---
 
-## How It Works (VNC — Option A)
+## How It Works: VNC
 
 No full desktop environment. A virtual framebuffer renders the emulator windows, and VNC exposes them remotely.
 
