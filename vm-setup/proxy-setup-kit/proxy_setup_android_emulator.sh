@@ -56,7 +56,7 @@ if ! adb devices | grep -q "device$"; then
   
   # Start emulator in background
   echo "→ Starting emulator with required flags..."
-  emulator -avd "${AVD_NAME}" -writable-system -no-snapshot -selinux permissive > /dev/null 2>&1 &
+  emulator -avd "${AVD_NAME}" -writable-system -no-snapshot -selinux permissive -no-window> /dev/null 2>&1 &
   EMULATOR_PID=$!
   echo "   Emulator started (PID: ${EMULATOR_PID})"
   echo "   Waiting for emulator to connect (this may take a minute or two)..."
