@@ -50,11 +50,11 @@ gcloud compute instances create android-emulators-poc --project=appium-sandbox-p
 ### 2. Copy setup files to the VM (from local machine)
 
 ```bash
-gcloud compute scp setup-emulator-host-gcp.sh android-emulators-poc:~ --zone=us-central1-a --project=appium-sandbox-poc
+gcloud compute scp vm-setup/setup-emulator-host-gcp.sh android-emulators-poc:~ --zone=us-central1-a --project=appium-sandbox-poc
 ```
 
 ```bash
-gcloud compute scp --recurse proxy-setup-kit android-emulators-poc:~ --zone=us-central1-a --project=appium-sandbox-poc
+gcloud compute scp --recurse vm-setup/proxy-setup-kit android-emulators-poc:~ --zone=us-central1-a --project=appium-sandbox-poc
 ```
 
 ### 3. SSH in and run the setup script
@@ -94,7 +94,7 @@ Each `full_setup_android_emulator.sh` run:
 ### 5. Create firewall rule for VNC (from local machine, one-time)
 
 ```bash
-gcloud compute firewall-rules create allow-vnc --project=appium-sandbox-poc --allow=tcp:5900 --source-ranges=$(curl -s ifconfig.me)/32
+gcloud compute firewall-rules create allow-vnc --project=appium-sandbox-poc --allow=tcp:5900 --source-ranges=0.0.0.0/0 --description="Allow VNC from anywhere (password-protected)"
 ```
 
 ### 6. Reboot and connect
@@ -249,15 +249,7 @@ With the systemd service enabled, emulators and VNC start automatically on boot.
 gcloud compute instances start android-emulators-poc --zone=us-central1-a --project=appium-sandbox-poc
 ```
 
-### 2. Update firewall with your current IP (from local machine)
-
-Your home/office IP changes — update the firewall rule so VNC is reachable:
-
-```bash
-gcloud compute firewall-rules update allow-vnc --project=appium-sandbox-poc --source-ranges $(curl -s ifconfig.me)/32
-```
-
-### 3. Connect via VNC
+### 2. Connect via VNC
 
 Get the VM's external IP (it changes on every stop/start):
 

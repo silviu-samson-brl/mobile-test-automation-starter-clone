@@ -20,8 +20,8 @@
 #
 # STEP 2 — Copy this script and proxy-setup-kit to the VM:
 #
-#   gcloud compute scp setup-emulator-host-gcp.sh android-emulators-poc:~ --zone=us-central1-a --project=appium-sandbox-poc
-#   gcloud compute scp --recurse proxy-setup-kit android-emulators-poc:~ --zone=us-central1-a --project=appium-sandbox-poc
+#   gcloud compute scp vm-setup/setup-emulator-host-gcp.sh android-emulators-poc:~ --zone=us-central1-a --project=appium-sandbox-poc
+#   gcloud compute scp --recurse vm-setup/proxy-setup-kit android-emulators-poc:~ --zone=us-central1-a --project=appium-sandbox-poc
 #
 # STEP 3 — SSH in and run this script:
 #
@@ -36,10 +36,7 @@
 #
 # STEP 5 — Create a firewall rule for VNC (from local machine, once):
 #
-#   gcloud compute firewall-rules create allow-vnc \
-#     --project=appium-sandbox-poc \
-#     --allow=tcp:5900 \
-#     --source-ranges=$(curl -s ifconfig.me)/32
+#   gcloud compute firewall-rules create allow-vnc --project=appium-sandbox-poc --allow=tcp:5900 --source-ranges=0.0.0.0/0
 # =============================================================================
 
 set -euo pipefail
