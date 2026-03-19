@@ -133,7 +133,11 @@ if echo "no" | avdmanager create avd \
       echo "hw.trackBall = yes" >> "${AVD_CONFIG_FILE}"
       echo "   ✓ Enabled trackball"
     fi
-    
+
+    # Set RAM to 4GB (default 1536MB is too low)
+    sed -i 's/^hw.ramSize.*/hw.ramSize = 4096/' "${AVD_CONFIG_FILE}"
+    echo "   ✓ RAM set to 4096MB"
+
     echo "   ✓ Hardware configuration updated"
   else
     echo "⚠️  Warning: Could not find AVD config file at ${AVD_CONFIG_FILE}"
