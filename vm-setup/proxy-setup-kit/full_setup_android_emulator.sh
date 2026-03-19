@@ -49,6 +49,15 @@ echo ""
 echo "AVD Name: ${AVD_NAME}"
 echo ""
 
+# Kill any running emulators to avoid adb confusion (e.g. boot check passing from a different device)
+if adb devices 2>/dev/null | grep -q "emulator"; then
+  echo "→ Killing running emulators before setup..."
+  adb emu kill 2>/dev/null || true
+  sleep 3
+  echo "   Done"
+  echo ""
+fi
+
 # Check if scripts exist
 if [[ ! -f "${CREATE_EMULATOR_SCRIPT}" ]]; then
   echo "❌ Error: create_android_emulator.sh not found at ${CREATE_EMULATOR_SCRIPT}"
