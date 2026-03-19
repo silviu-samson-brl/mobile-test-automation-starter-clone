@@ -67,13 +67,9 @@ gcloud compute ssh android-emulators-poc --zone=us-central1-a --project=appium-s
 bash ~/setup-emulator-host-gcp.sh
 ```
 
-This installs all infrastructure: system packages, Java 17, Node.js 20, Android SDK, Appium, cloudflared, KVM, VNC tools (Xvfb, x11vnc, openbox), and registers the systemd auto-start service.
+This installs all infrastructure: system packages, Java 17, Node.js 20, Android SDK, Appium, cloudflared, KVM, VNC tools (Xvfb, x11vnc, openbox), and registers the systemd auto-start service. At the end, it drops you into a new shell with the KVM group and env vars already loaded.
 
-### 4. Apply KVM group and create emulators
-
-```bash
-newgrp kvm
-```
+### 4. Create emulators
 
 ```bash
 cd ~/proxy-setup-kit && ./full_setup_android_emulator.sh emulator1
